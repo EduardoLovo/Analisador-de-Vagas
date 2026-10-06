@@ -39,40 +39,60 @@ export async function POST(request: Request) {
   }
 
   const ai = new GoogleGenAI({ apiKey });
+  let ultimoErro: unknown;
 
-  try {
-    const resposta = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || "gemini-flash-latest",
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `DESCRIÇÃO DA VAGA:\n${vaga}` }, curriculo],
+  // No plano gratuito cada modelo tem sua própria cota e às vezes fica sobrecarregado,
+  // então tentamos o próximo da lista em caso de 404, 429 ou 5xx.
+  for (const modelo of modelos()) {
+    try {
+      const resposta = await ai.models.generateContent({
+        model: modelo,
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: `DESCRIÇÃO DA VAGA:\n${vaga}` }, curriculo],
+          },
+        ],
+        config: {
+          systemInstruction: promptSistema,
+          responseMimeType: "application/json",
+          responseJsonSchema: analiseSchema,
+          temperature: 0.4,
         },
-      ],
-      config: {
-        systemInstruction: promptSistema,
-        responseMimeType: "application/json",
-        responseJsonSchema: analiseSchema,
-        temperature: 0.4,
-      },
-    });
+      });
 
-    if (!resposta.text) {
-      return erro("A IA não retornou uma análise. Tente novamente.", 502);
-    }
+      if (!resposta.text) {
+        return erro("A IA não retornou uma análise. Tente novamente.", 502);
+      }
 
-    const analise: Analise = JSON.parse(resposta.text);
-    return Response.json(analise);
-  } catch (e) {
-    if (e instanceof ApiError) {
-      if (e.status === 429) {
-        return erro("Limite gratuito da API atingido. Aguarde um minuto e tente de novo.", 429);
+      const analise: Analise = JSON.parse(resposta.text);
+      return Response.json(analise);
+    } catch (e) {
+      ultimoErro = e;
+      if (e instanceof ApiError && (e.status === 404 || e.status === 429 || e.status >= 500)) {
+        console.warn(`Modelo ${modelo} indisponível (${e.status}), tentando o próximo.`);
+        continue;
       }
-      if (e.status === 400 || e.status === 403) {
-        return erro("Requisição recusada pelo Gemini. Confira sua GEMINI_API_KEY.", e.status);
-      }
+      break;
     }
-    console.error("Erro ao analisar:", e);
-    return erro("Erro ao gerar a análise. Tente novamente.", 500);
   }
+
+  if (ultimoErro instanceof ApiError) {
+    if (ultimoErro.status === 429) {
+      return erro("Limite gratuito da API atingido. Aguarde um minuto e tente de novo.", 429);
+    }
+    if (ultimoErro.status >= 500) {
+      return erro("Os modelos do Gemini estão sobrecarregados agora. Tente de novo em instantes.", 503);
+    }
+    if (ultimoErro.status === 400 || ultimoErro.status === 403) {
+      return erro("Requisição recusada pelo Gemini. Confira sua GEMINI_API_KEY.", ultimoErro.status);
+    }
+  }
+  console.error("Erro ao analisar:", ultimoErro);
+  return erro("Erro ao gerar a análise. Tente novamente.", 500);
+}
+
+function modelos() {
+  const lista = [process.env.GEMINI_MODEL, "gemini-flash-latest", "gemini-flash-lite-latest"];
+  return [...new Set(lista.filter((m): m is string => Boolean(m)))];
 }
