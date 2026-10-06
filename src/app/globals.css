@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
+@custom-variant dark (@media (prefers-color-scheme: dark));
+
 :root {
-  --background: #ffffff;
+  --background: #f6f7f9;
   --foreground: #171717;
+  --cartao: #ffffff;
+  --borda: #e3e5e8;
+  --suave: #5f6670;
+  --destaque: #4f46e5;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-cartao: var(--cartao);
+  --color-borda: var(--borda);
+  --color-suave: var(--suave);
+  --color-destaque: var(--destaque);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #0b0c0f;
     --foreground: #ededed;
+    --cartao: #15171c;
+    --borda: #2a2d34;
+    --suave: #9aa1ab;
+    --destaque: #6366f1;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+@layer components {
+  .campo {
+    @apply rounded-xl border border-borda bg-cartao p-4 text-sm outline-none transition focus:border-destaque focus:ring-2 focus:ring-destaque/20;
+  }
 }
